@@ -1,0 +1,18 @@
+ate阿忒，希腊神话的蛊惑女神（引诱人或神失去理智而发狂的女神）。
+是我精神混乱地时候配的一个容器。所以就用了这名字。
+ate管理的集群们叫slave。
+ate来自ubuntu镜像，本质上是个ubuntu，没密码只有root。
+而slave来自ate。
+
+
+使用unminimize，反最小化ubuntu
+
+ate 拥有：
+    nano
+    mysql(mariadb-server)
+    更新过的apt（现用科大源）
+    jq（一个格式化json小工具，方便配置文件时使用（许多配置文件为json））
+
+其中，mysql：
+    拥有超级用户root，host：localhost，密码空、和超级用root，host：%，密码root。
+    监听端口：3306，ip：0.0.0.0（无连接ip限制）

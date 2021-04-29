@@ -1,0 +1,122 @@
+基于docker的最小ubuntu搭建的mysql
+献给下一任运维的人，我只做一些微小的工作，希望你看了后能做的更快更高效。
+
+参考资料：
+    runoob的mysql非常不专业，不如c语言中文网写的用心简单http://c.biancheng.net/mysql/10/
+    可以参考的mysql入门文档https://www.yiibai.com/mysql/mysql_create_tables.html
+    同时推荐先看下这个博客，纯粹讲语句，新手村学这几句就够了（别看多了就看开头）https://blog.csdn.net/weixin_55086330/article/details/115028662
+    然后慢慢来写我配置的猜测思路和关心重点
+
+先apt install mariadb-server
+runoob上说，mysql服务器不需要密码登录，博客说是因为数据库有空用户导致可以钻空子。走先去把用户弄安全
+不管这些，先用service mysql start打开，再mysql直接进去
+
+进入mysql的repl
+    MariaDB [none]>
+方框里指的是当前选中的库
+注意sql语句的设计是以分号结束“;”，我当成命令行卡了半天不晓得咋回事。。不写结尾分号就会出现无响应的现象
+
+show databases [like"部分匹配字符串"];
+也可以直接 show database [like “某数据库”]
+用来看所有数据库，刚装上系统会自带以下三个库
+    information_schema：（各个表的信息，列，权限，数据）https://blog.csdn.net/xianjie0318/article/details/80857568
+    mysql：（库级别权限，用户账号，表级别权限，事件与任务调度，索引统计信息）http://blog.itpub.net/69975301/viewspace-2694339/
+    performance_schema：（收集数据库服务器参数，有点难）https://blog.csdn.net/qq_33684555/article/details/88816889
+
+
+所以第一件事着手改mysql库里user表的账号
+但别急，先要看表内容，有这么几个命令
+
+    use <数据库>;
+    切换目前数据库
+
+    show tables;
+    查看该数据库有多少表
+
+    show table status;
+    查看各表状态信息
+
+    以下命令效果差不多都是看表的列（字段）构成（信息）
+        show columns from 数据库名.表名
+        show columns from 数据库
+        describe 表 或 desc 表
+
+    select 列 from 表（要看整张表的内容就select * from 表）
+    drop/delete/truncate都是删除https://blog.csdn.net/z_ryan/article/details/81913481
+总而言之，先看多少数据库，再看某库多少表，再看表的信息（show columns或desc）和内容（select *）
+
+
+select有时候会乱格式，此时利用\G代替分号;格式就对了。（select * from xxx\G）
+*其中user表里值得注意的一列（字段）是password_expired用户密码过期，改完密码就来查这个事。
+照着这里面的改，改完密码就回来https://blog.csdn.net/qq_34002221/article/details/86657517
+    直接
+    use mysql;
+    update user set host='%',password=password('root') where user='root';
+    flush privileges;
+    就是将当前user表的用户信息和privilige表的权限设置从mysql库（就是mysql数据库的内置库）提取到内存里。
+    一般就是在修改用户信息或者权限后，如果想不重启mysql服务而使修改的内容直接生效，那么就需要执行这个语句。
+    设置密码一定要用password函数以加密，数据库是存密文的，一旦设置为明文，除非你能找到加密的反函数以对原密码进行反函数映射，输入映射后的密码，否则不行。
+    简单讲，密码的对比规则可能是password(str) == psw，所以右值（数据库表中的值）一定得在数据库设置用户时写成密文（用password()函数加密），否则不满足等式。
+
+
+改好了，现在有'root'@'%'，还需要增加一个'root'@'localhost'用户，理由是：
+    如果没有localhost账户，当root从本机连接时，mysql_install_db创建的localhost的匿名用户账户将占先。结果是，root将被视为匿名用户。原因是匿名用户账户的Host列值比'root'@'%'账户更具体，这样在user表排序顺序中排在前面。
+    简要分析https://blog.csdn.net/ibsfn/article/details/88963040
+
+
+如果想新增用户，详细参考：http://www.cppcns.com/shujuku/mysql/116669.html
+简单概括博客内容：
+前情提要：grant语句：grant 权限 on 数据库对象 to 用户 
+
+    使用grant创建超级用户：（grant会自动加密密码，不需要password函数）
+        mysql> GRANT ALL PRIVILEGES ON *.* TO 'monty'@'localhost' IDENTIFIED BY 'some_pass' WITH GRANT OPTION;
+        mysql> GRANT ALL PRIVILEGES ON *.* TO 'monty'@'%' IDENTIFIED BY 'some_pass' WITH GRANT OPTION;
+        （上文提到localhost和%账号共存的理由）
+    使用grant创建管理用户：
+        mysql> GRANT RELOAD,PROCESS ON *.* TO 'admin'@'localhost';（该账户只用于从本机连接。授予了RELOAD（flush table，flush privilege）和PROCESS（查看管理用户线程）管理权限。无权访问数据库。）
+        mysql> GRANT USAGE ON *.* TO 'dummy'@'localhost';（创建无权限用户（只能登陆）。）
+    使用insert在mysql库的user表里插入用户数据，并使用flush privilege刷新（以下应该是四种不同的方式）。
+        mysql> INSERT INTO user  VALUES('localhost','monty',PASSWORD('some_pass'), 'Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
+        mysql> INSERT INTO user  VALUES('%','monty',PASSWORD('some_pass'), 'Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y');
+        mysql> INSERT INTO user SET Host='localhost',User='admin', Reload_priv='Y', Process_priv='Y';
+        mysql> INSERT INTO user (Host,User,Password) VALUES('localhost','dummy','');
+        mysql> FLUSH PRIVILEGES;
+但“因为新版的的mysql版本已经将创建账户和赋予权限的方式分开了”，这句话是博客说的。18年的博客https://blog.csdn.net/li_0891/article/details/80915780。
+    创建账户:create user '用户名'@'访问主机' identified by '密码';
+    赋予权限:grant 权限列表 on 数据库 to '用户名'@'访问主机' ;(修改权限时在后面加with grant option)
+其实我试了试，旧方法可以的。
+
+*如果以上的grant不管用，这里有绝对能用的insert创建超级用户：
+MariaDB [none]> use mysql;
+MariaDB [mysql]> INSERT  INTO `user`(`Host`,`User`,`Password`,`Select_priv`,`Insert_priv`,`Update_priv`,`Delete_priv`,`Create_priv`,`Drop_priv`,`Reload_priv`,`Shutdown_priv`,`Process_priv`,`File_priv`,`Grant_priv`,`References_priv`,`Index_priv`,`Alter_priv`,`Show_db_priv`,`Super_priv`,`Create_tmp_table_priv`,`Lock_tables_priv`,`Execute_priv`,`Repl_slave_priv`,`Repl_client_priv`,`Create_view_priv`,`Show_view_priv`,`Create_routine_priv`,`Alter_routine_priv`,`Create_user_priv`,`Event_priv`,`Trigger_priv`,`Create_tablespace_priv`,`ssl_type`,`ssl_cipher`,`x509_issuer`,`x509_subject`,`max_questions`,`max_updates`,`max_connections`,`max_user_connections`,`plugin`,`authentication_string`,`password_expired`) VALUES ('localhost','root','root','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','Y','','','','',0,0,0,0,'mysql_native_password','','N');
+
+*细究就是版本和mariadb与mysql之间的问题，我没精力弄清，等快遇到用户管理和安全问题的那天你去研究吧。
+
+删除用户是没有歧义的
+    drop user 'user_name'@'adress';
+
+mysql登录可能出现错误ERROR 2005 (HY000): Unknown MySQL server host '192.168.233.14:3306' (-2)
+https://blog.csdn.net/fenglibing/article/details/6898923
+当然多半是和防火墙有关，打开就好了。
+
+my.conf配置文件里是includedir，引用了两个文件夹，所以分散写了配置文件（老的mysql配置文件都写在一起，都在一个my.cnf的文件里，不方便管理，这也是linux软件的趋势）。根据includedir提示去挨个找配置文件，然后修改。
+关于配置文件，值得注意的是my.conf里的以下参数
+    max_connect_errors = 6000
+    # 对于同一主机，如果有超出该参数值个数的中断错误连接，则该主机将被禁止连接。如需对该主机进行解禁，执行：FLUSH HOST。防止黑客 
+    query_cache_size = 0
+    查询缓存是个瓶颈，默认设置为0，设的越大每次查询存储的时间开销越高。（官方建议利用其它手段加速查询，类似“优化索引、增加拷贝分散负载或者启用额外的缓存（比如memcache或redis）”）
+
+
+*数据库服务器的dns服务器设置需要关注一下https://blog.csdn.net/hwhua1986/article/details/78188231，貌似会拉跨登录速度。
+*要想登录，配置文件里的一项bind-address=0.0.0.0的解释http://www.cocoachina.com/articles/65055，默认是bind-adress=127.0.0.1，大概是“如果用默认localhost，mysql就只会监听来自本地ip的登录了”。
+    3306端口监听在127.0.0.1，只有本机客户端可以访问，其他服务器无法访问
+    3306端口如果监听在0.0.0.0上，如果没有端口限制，那么其他服务器则可以连接该服务器的该端口
+
+关于无法service mysql stop的帖子，我做了和原文一样的配置https://blog.csdn.net/weixin_31236795/article/details/113228178。
+用处不大，继续找，现在内外网都找不到类似问题和资料，StackOverflow也没有，csdn更别想了。你也不用搜了。
+
+unminimize展开Ubuntu后莫名其妙的好了，我们继续
+
+配置主从，即master和slave服务器，两篇对比着看
+https://blog.csdn.net/qq_27517377/article/details/98610374照着这篇做，能成功。其中用了mysqldump命令，另一篇没用，怀疑问题症结就在于此。
+https://blog.csdn.net/xlgen157387/article/details/51331244/这篇只是参考，帮助理解
