@@ -1,0 +1,86 @@
+参考https://www.runoob.com/docker/docker-command-manual.html
+
+docker可操作两类对象：image和container
+
+docker pull <image>
+
+将ubuntu、java、mysql之类的软件快照拉取到本机
+    之后即可利用快照创建容器
+    例：docker pull ubuntu
+
+
+docker create  [--name <container_name>] <IMAGE>
+    根据快照创建容器
+    例：docker create --name Ate ubuntu
+
+docker start/stop/restart <CONTAINER>
+    开始，停止，重启容器
+    例：docker start Ate
+
+docker run [--name=<CONTAINER>] [other_options(-p host_port:container_port)] <IMAGE> [command]
+尽量用run创建容器，用的人最多，而且能绑定端口
+
+    创建并运行一个容器
+    例：docker run --name ate -it ubuntu /bin/bash
+    -it大概是连上bash
+    如果要绑端口就需要-itd：docker run --name ate -it -p 3306（宿主端口）：3306（容器端口） -p 8080：8080 ubuntu /bin/bash
+    容器绑定端口详见https://blog.csdn.net/Jacen_Chou/article/details/84261334
+
+
+docker exec -it <CONTAINER> <command>
+    在容器里运行命令
+    例：docker exec -it Ate /bin/bash 进入容器里并开一个bash
+
+docker kill <CONTAINER>
+
+docker rm <CONTAINER>
+
+docker top <CONTAINER>
+    查看容器中的进程
+
+docker attach [OPTIONS] <CONTAINER>
+    连接上正在运行容器（的屏幕？）
+
+docker port <CONTAINER> 
+打印容器端口的映射
+例：docker port Ate
+
+docker commit [options] <CONTAINER> [REPOSITORY[:TAG]]
+    从容器创建一个新的镜像
+    -a镜像作者
+    -c使用Dockerfile指令来创建镜像
+    -m提交时的说明文字
+    -p在commit时，将容器暂停
+    例：docker commit -a"rend" -m"a ubuntu" Ate Ate:1.0
+
+docker push [OPTIONS] NAME[:TAG]
+    将本地的镜像上传到镜像仓库,要先登陆到镜像仓库
+    docker login [options]
+    -u _user_
+    -p passwd
+    登录
+
+
+docker build [OPTIONS] PATH | URL | -
+    根据Dockerfile创建image
+    example:docker build -t runoob/ubuntu:v1 . 
+    -t="_user_/_name:tag"
+
+docker rmi <CONTAINER>
+    删除一个镜像
+
+==========================
+如没有可用容器，就从现有镜像搞一个出来：
+    docker run --name xxx -it -px:x -px:x 某镜像 /bin/bash
+    docker run --name xxx -it -px:x -px:x 某镜像 bash
+
+如果有，每次启动，最好是先start容器，
+    docker start xxx
+
+再exec -it 容器 /bin/bash
+    docker exec -it xxx bash
+    docker exec -it xxx /bin/bash
+
+通过配置文件更改现有容器端口映射：https://www.zhangqiongjie.com/2494.html
+但我尝试过，失败了（改了配置文件，整个容器直接消失）。这告诉我们尽量多存档，因为image是保险的而contianer不可能天长地久。随时run一个container出来就好。
+
